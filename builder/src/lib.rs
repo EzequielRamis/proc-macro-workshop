@@ -1,8 +1,8 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, Data, DeriveInput, Field, Fields, GenericArgument, Lit, Meta, PathArguments,
-    Type,
+    parse_macro_input, Data, DeriveInput, Error, Field, Fields, GenericArgument, Lit, Meta,
+    PathArguments, Type,
 };
 use unzip_n::unzip_n;
 
@@ -60,6 +60,10 @@ fn builder_each_setter(field: &Field) -> Option<proc_macro2::TokenStream> {
                             }
                             return Some(setter);
                         }
+
+                        let span = attr.parse_meta().unwrap();
+                        let error = Error::new_spanned(span, "expected `builder(each = \"...\")`");
+                        return Some(error.to_compile_error());
                     }
                 }
             }
