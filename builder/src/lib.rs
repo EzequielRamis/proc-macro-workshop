@@ -1,6 +1,9 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use unzip_n::unzip_n;
+
+unzip_n!(3);
 
 #[proc_macro_derive(Builder)]
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -17,7 +20,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         _ => unimplemented!(),
     };
 
-    let (builder_fields, none_fields): (Vec<_>, Vec<_>) = fields
+    let (builder_fields, none_fields, setters) = fields
         .iter()
         .map(|field| {
             let name = &field.ident;
@@ -26,9 +29,16 @@ pub fn derive(input: TokenStream) -> TokenStream {
             let optional_field = quote! { #name: Option<#ty> };
             let none_field = quote! { #name: None };
 
-            (optional_field, none_field)
+            let setter_field = quote! {
+                fn #name(&mut self, #name: #ty) -> &mut Self {
+                    self.#name = Some(#name);
+                    self
+                }
+            };
+
+            (optional_field, none_field, setter_field)
         })
-        .unzip();
+        .unzip_n_vec();
 
     TokenStream::from(quote! {
         pub struct #builder {
@@ -41,6 +51,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     #(#none_fields),*
                 }
             }
+        }
+
+        impl #builder {
+            #(#setters)*
         }
     })
 }
