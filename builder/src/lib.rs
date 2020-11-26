@@ -94,14 +94,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
             let ty = &field.ty;
 
             let normal_field = quote! { #name: #ty };
-            let optional_field = quote! { #name: Option<#ty> };
-            let none_field = quote! { #name: None };
+            let optional_field = quote! { #name: std::option::Option<#ty> };
+            let none_field = quote! { #name: std::option::Option::None };
             let cloned_field = quote! { #name: self.#name.clone() };
 
             let setter_field = |setter_ty: &Type| {
                 quote! {
                     fn #name(&mut self, #name: #setter_ty) -> &mut Self {
-                        self.#name = Some(#name);
+                        self.#name = std::option::Option::Some(#name);
                         self
                     }
                 }
@@ -148,8 +148,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
         impl #builder {
             #(#setters)*
 
-            pub fn build(&mut self) -> Result<#ident, Box<dyn std::error::Error>> {
-                Ok(
+            pub fn build(&mut self) -> std::result::Result<#ident, std::boxed::Box<dyn std::error::Error>> {
+                std::result::Result::Ok(
                     #ident {
                         #(#build_fields),*
                     }
