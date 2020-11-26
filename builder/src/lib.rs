@@ -1,14 +1,17 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, GenericArgument, PathArguments, Type};
+use syn::{
+    parse_macro_input, Data, DeriveInput, Field, Fields, GenericArgument, Lit, Meta, PathArguments,
+    Type,
+};
 use unzip_n::unzip_n;
 
 unzip_n!(4);
 
-fn unwrap_option(ty: &Type) -> Option<&Type> {
+fn unwrap_type(wrapper: String, ty: &Type) -> Option<&Type> {
     if let Type::Path(tp) = ty {
         let segment = tp.path.segments.last()?;
-        if segment.ident != "Option" {
+        if segment.ident != wrapper {
             return None;
         }
         if let PathArguments::AngleBracketed(ref generic_args) = segment.arguments {
@@ -24,7 +27,48 @@ fn unwrap_option(ty: &Type) -> Option<&Type> {
     None
 }
 
-#[proc_macro_derive(Builder)]
+fn builder_each_setter(field: &Field) -> Option<proc_macro2::TokenStream> {
+    let ty = &field.ty;
+    let unwrapped_ty = unwrap_type("Vec".to_owned(), ty)?;
+    let field_ident = field.ident.as_ref()?;
+    for attr in field.attrs.iter() {
+        if let Some(ident) = attr.path.get_ident() {
+            if ident == "builder" {
+                let args = attr.parse_args().ok();
+                if let Some(Meta::NameValue(name_value)) = args {
+                    if let (Some(name), Lit::Str(lit)) =
+                        (name_value.path.get_ident(), name_value.lit)
+                    {
+                        if name == "each" {
+                            let value = lit.value();
+                            let value_ident = format_ident!("{}", &value);
+                            let setter = quote! {
+                                fn #value_ident(&mut self, #value_ident: #unwrapped_ty) -> &mut Self {
+                                    self.#field_ident.push(#value_ident);
+                                    self
+                                }
+                            };
+
+                            if *field_ident != value {
+                                return Some(quote! {
+                                    #setter
+                                    fn #field_ident(&mut self, #field_ident: #ty) -> &mut Self {
+                                        self.#field_ident = #field_ident;
+                                        self
+                                    }
+                                });
+                            }
+                            return Some(setter);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let data = &input.data;
@@ -59,11 +103,18 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 }
             };
 
-            if let Some(unwraped_ty) = unwrap_option(&field.ty) {
+            if let Some(unwraped_ty) = unwrap_type("Option".to_owned(), &field.ty) {
                 (
                     normal_field,
                     none_field,
                     setter_field(unwraped_ty),
+                    cloned_field,
+                )
+            } else if let Some(each_setter) = builder_each_setter(field) {
+                (
+                    normal_field,
+                    quote! { #name: std::vec::Vec::new() },
+                    each_setter,
                     cloned_field,
                 )
             } else {
