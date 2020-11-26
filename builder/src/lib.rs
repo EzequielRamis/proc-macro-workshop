@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 use unzip_n::unzip_n;
 
-unzip_n!(3);
+unzip_n!(4);
 
 #[proc_macro_derive(Builder)]
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -20,7 +20,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         _ => unimplemented!(),
     };
 
-    let (builder_fields, none_fields, setters) = fields
+    let (builder_fields, none_fields, setters, build_fields) = fields
         .iter()
         .map(|field| {
             let name = &field.ident;
@@ -28,6 +28,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
             let optional_field = quote! { #name: Option<#ty> };
             let none_field = quote! { #name: None };
+            let cloned_field = quote! {
+               #name: self.#name.clone()
+               .ok_or(format!("field `{}` is not set", stringify!(#name)))?
+            };
 
             let setter_field = quote! {
                 fn #name(&mut self, #name: #ty) -> &mut Self {
@@ -36,7 +40,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 }
             };
 
-            (optional_field, none_field, setter_field)
+            (optional_field, none_field, setter_field, cloned_field)
         })
         .unzip_n_vec();
 
@@ -55,6 +59,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
         impl #builder {
             #(#setters)*
+
+            pub fn build(&mut self) -> Result<#ident, Box<dyn std::error::Error>> {
+                Ok(
+                    #ident {
+                        #(#build_fields),*
+                    }
+                )
+            }
         }
     })
 }
